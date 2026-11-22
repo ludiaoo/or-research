@@ -19,6 +19,24 @@
 - **结果可视化**：高德静态底图 + 可选 JS 层；方案切换、逐条/架次显隐、无人机架次、禁飞区
 - **参考文档**：20 篇，覆盖建模规范、算法手册、证明规程、实验统计、能力边界与无人机配送专题
 
+## 在线演示
+
+`examples/sample_payload.json`（4 客户 / 2 卡车 / 1 架次 / 1 禁飞区，合成数据）渲染出的页面
+已部署为 GitHub Pages：**https://ludiaoo.github.io/or-research/**
+
+页面为自包含 HTML：静态底图 base64 内嵌、零凭据、断网也能打开，由 `build_map.py --no-js` 生成。
+左侧面板切换「初始解 / 最终解」，勾选线路与架次显隐；卡车走真实驾车路径（实线），
+无人机架次为直线示意（虚线，起飞空心圆环、归队实心方块），禁飞区按真实半径画圈。
+
+![演示页面](docs/preview.png)
+
+本地复现同一页面（需自备高德 Web 服务 Key）：
+
+```bash
+AMAP_ENV_FILE=/path/to/your/.env python amap/scripts/build_map.py \
+  examples/sample_payload.json -o demo.html --size 1024x1024 --scale 2 --no-js
+```
+
 ## 安装
 
 本项目不是 Python 包，无需 `pip install`。克隆后放到 Agent 的 skills 目录即可：
@@ -119,6 +137,7 @@ or-research/
 ├─ NOTICE                    第三方材料说明：高德数据条款、示例数据性质、依赖许可
 ├─ .gitignore                忽略 .env、缓存、生成目录与底图缓存
 ├─ .github/workflows/ci.yml  多 Python 版本离线测试
+├─ docs/                     GitHub Pages 站点：演示页 index.html + 截图 preview.png
 ├─ examples/                 合成样例：solution → payload
 ├─ tests/test_repo.py        9 项仓库级测试（离线）
 ├─ references/               20 篇领域参考
