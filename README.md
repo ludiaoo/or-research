@@ -111,7 +111,8 @@ AMAP_JS_SECRET=...    # 与 JS key 配套的安全密钥（securityJsCode）
 or-research/
 ├─ SKILL.md                  唯一入口：分诊 / 六环节 / 八检查点 / 硬红线 / 可视化路线
 ├─ README.md                 本文件
-├─ LICENSE                   MIT
+├─ LICENSE                   MIT（纯许可证原文）
+├─ NOTICE                    第三方材料说明：高德数据条款、示例数据性质、依赖许可
 ├─ .gitignore                忽略 .env、缓存、生成目录与底图缓存
 ├─ .github/workflows/ci.yml  多 Python 版本离线测试
 ├─ examples/                 合成样例：solution → payload
@@ -194,4 +195,4 @@ python -m unittest discover -s tests -v
 
 ## 许可
 
-MIT，见 `LICENSE`。示例数据为合成数据；高德返回的底图与坐标数据受其自身服务条款约束，本仓库不含任何凭据或下载的瓦片。
+MIT，见 `LICENSE`。高德返回的底图与坐标数据受其自身服务条款约束，本仓库不含任何凭据或下载的瓦片；示例数据为合成数据——这些第三方说明单独放在 `NOTICE`，以免影响许可证识别。
