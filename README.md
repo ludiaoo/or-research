@@ -20,7 +20,7 @@
 本项目不是 Python 包，无需 `pip install`。克隆后放到 Agent 的 skills 目录即可：
 
 ```bash
-git clone <仓库地址> or-research
+git clone https://github.com/ludiaoo/or-research.git or-research
 # 目标位置：~/.workbuddy/skills/or-research/
 ```
 
