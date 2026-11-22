@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>杭州真实路网 · 配送线路对比</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #wrap { position: relative; width: 100%; height: 100vh; overflow: hidden; background: #e6e9ed; }
+
+  /* 在线高德地图层（有 JS key 且加载成功才显示） */
+  #map { position: absolute; inset: 0; z-index: 1; display: none; background: #eef0f3; }
+
+  /* 静态底图层：始终先渲染，作为秒开与兜底 */
+  #stage { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; }
+  #canvas {
+    position: relative; line-height: 0; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 6px 26px rgba(0, 0, 0, .18);
+  }
+  #canvas img { display: block; width: 100%; height: 100%; }
+  #canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #cr { position: absolute; right: 6px; bottom: 4px; font-size: 10px; line-height: 1.4;
+        color: #444; background: rgba(255,255,255,.75); padding: 1px 5px; border-radius: 3px; }
+
+  .panel {
+    position: absolute; top: 16px; left: 16px; width: 336px; max-height: calc(100vh - 32px);
+    overflow-y: auto; background: rgba(255,255,255,.97); border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.16); font-size: 13px; color: #1a1a1a; z-index: 10;
+  }
+  .panel h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  .sub { font-size: 11px; color: #777; margin-bottom: 10px; line-height: 1.5; }
+  .warn {
+    background: #fff8e6; border: 1px solid #ffe0a3; color: #8a5300;
+    font-size: 11px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;
+  }
+  .warn b { font-size: 12px; }
+  .err {
+    display: none; background: #fdecea; border: 1px solid #f5c2bd; color: #a02a1e;
+    font-size: 11px; line-height: 1.6; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;
+  }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  /* 高德 JS SDK 会注入全局 button 样式，把这里压成灰色，所以关键属性加 !important */
+  .panel .tabs button {
+    flex: 1; padding: 8px 6px; font-size: 12px; cursor: pointer; border-radius: 6px;
+    border: 1px solid #d9d9d9 !important; background: #fafafa !important; color: #333 !important;
+    font-family: inherit; appearance: none; -webkit-appearance: none;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .panel .tabs button:hover { border-color: #9aa0a6 !important; }
+  .panel .tabs button.on {
+    background: #1a1a1a !important; border-color: #1a1a1a !important; color: #fff !important;
+  }
+  .banner {
+    display: flex; align-items: baseline; gap: 8px; background: #f4f6f8;
+    border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;
+  }
+  .banner .big { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: #333; }
+  .banner .tail { font-size: 11px; color: #666; margin-left: auto; text-align: right; line-height: 1.4; }
+  .banner.opt { background: #eaf7f0; }
+  .banner.opt .big { color: #127a4b; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .delta.up { color: #c0392b; }
+  .delta.down { color: #1f9d63; }
+
+  .rtools { display: flex; align-items: center; gap: 5px; margin: 12px 0 2px; font-size: 11px; }
+  .rtools .rcount { color: #555; margin-right: auto; font-variant-numeric: tabular-nums; }
+  .mini {
+    border: 1px solid #ddd; background: #fafafa; border-radius: 4px; padding: 2px 7px;
+    font-size: 11px; cursor: pointer; color: #444; font-family: inherit; line-height: 1.5;
+  }
+  .mini:hover { border-color: #9aa0a6; background: #f0f2f4; }
+
+  .rlist { margin-top: 2px; }
+  .rrow {
+    display: flex; align-items: center; gap: 6px; padding: 5px 2px;
+    border-bottom: 1px solid #f5f5f5; font-size: 12px; cursor: pointer;
+    white-space: nowrap; transition: opacity .12s, background .12s;
+  }
+  .rrow:hover { background: #f7f8fa; }
+  .rrow.off { opacity: .38; }
+  .rrow input { margin: 0; flex: 0 0 auto; accent-color: #1a1a1a; cursor: pointer; }
+  .chip { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .rname { font-weight: 600; flex: 0 0 24px; }
+  .rmeta { color: #888; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  .rstat { color: #666; margin-left: auto; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+
+  /* 架次行：挂在卡车行下面，缩进 + 虚线色块 */
+  .srow {
+    display: flex; align-items: center; gap: 6px; padding: 3px 2px 3px 24px;
+    border-bottom: 1px solid #f7f7f7; font-size: 11.5px; color: #555; cursor: pointer;
+    white-space: nowrap; transition: opacity .12s, background .12s;
+  }
+  .srow:hover { background: #f7f8fa; }
+  .srow.off { opacity: .38; }
+  .srow input { margin: 0; flex: 0 0 auto; accent-color: #1a1a1a; cursor: pointer; }
+  .sdash { display: inline-block; width: 14px; height: 0; border-top: 2px dashed #888; flex: 0 0 auto; }
+  .smeta { overflow: hidden; text-overflow: ellipsis; }
+
+  .legend { margin-top: 10px; font-size: 11px; color: #666; line-height: 1.9; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 1px; }
+  .dashline { display: inline-block; width: 16px; height: 0; border-top: 2px dashed #5b6270; margin-right: 4px; vertical-align: 3px; }
+  .ring { display: inline-block; width: 7px; height: 7px; border-radius: 50%; border: 2px solid #5b6270; background: #fff; margin: 0 4px 0 8px; }
+  .sq { display: inline-block; width: 7px; height: 7px; background: #5b6270; border: 1.5px solid #1b1b1b; border-radius: 1px; margin: 0 4px 0 4px; }
+  .nfzdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px dashed #c0392b; background: rgba(192,57,43,.12); margin-right: 4px; vertical-align: 0; }
+  .note { margin-top: 10px; font-size: 11px; color: #999; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="stage">
+    <div id="canvas">
+      <img id="base" alt="高德地图底图">
+      <svg id="ov" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="cr"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h1 id="title">杭州真实路网 · 配送线路</h1>
+    <div class="sub" id="subtitle"></div>
+    <div id="warn" class="warn" style="display:none"></div>
+    <div id="err" class="err"></div>
+    <div class="tabs" id="tabs"></div>
+    <div id="banner" class="banner"></div>
+    <table id="stats"></table>
+    <div class="rtools" id="rtools"></div>
+    <div class="rlist" id="routes"></div>
+    <div class="legend" id="legend"></div>
+    <div class="note" id="note"></div>
+  </div>
+</div>
+
+<script>
+const P = __PAYLOAD__;
+const B = P.basemap;
+
+// JS API 凭据（可由生成脚本注入；为空则只用静态底图）
+const AMAP_JSKEY = "__AMAP_JSKEY__";
+const AMAP_JSCODE = "__AMAP_JSCODE__";
+
+let curKey = null;
+let hidden = {};          // 被隐藏线路的下标；空对象 = 全部显示
+let hiddenS = {};         // 被隐藏架次，键 "线路下标:架次下标"；与 hidden 独立
+let amap = null, amapReady = false;
+let routeOvs = [], baseOvs = [];
+
+/* ---------------- 投影：与 amap.mercator() 必须一字不差 ---------------- */
+const N = 256 * Math.pow(2, B.zoom);
+function mx(lng) { return (lng + 180) / 360 * N; }
+function my(lat) {
+  const s = Math.sin(lat * Math.PI / 180);
+  return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * N;
+}
+const CX = mx(B.center[0]), CY = my(B.center[1]);
+function xy(lng, lat) {
+  return [mx(lng) - CX + B.w / 2, my(lat) - CY + B.h / 2];
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ---------------- 小工具 ---------------- */
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+function clearErr() { document.getElementById('err').style.display = 'none'; }
+function shownRoutes(sc) { return sc.routes.filter(function (r, i) { return !hidden[i]; }); }
+function fmt1(v) { return Number(v).toFixed(1); }
+function nCust(s) { return Array.isArray(s.customers) ? s.customers.length : (s.customers || 0); }
+function hasDrone(sc) {
+  return (sc.routes || []).some(function (r) { return (r.sorties || []).length > 0; });
+}
+
+/* ---------------- 静态层：等比 contain，不裁切，保证坐标对齐 ---------------- */
+function fitCanvas() {
+  const cv = document.getElementById('canvas');
+  const k = Math.min(window.innerWidth / B.w, window.innerHeight / B.h);
+  cv.style.width = Math.round(B.w * k) + 'px';
+  cv.style.height = Math.round(B.h * k) + 'px';
+}
+
+function pathPts(path) {
+  return (path || []).map(function (p) {
+    const q = xy(p[0], p[1]);
+    return q[0].toFixed(1) + ',' + q[1].toFixed(1);
+  }).join(' ');
+}
+
+function svgPts(r) { return pathPts(r.path); }
+
+function svgLine(path, color, width, op, dash) {
+  return '<polyline points="' + pathPts(path) + '" fill="none" stroke="' + color + '"'
+    + ' stroke-width="' + width + '" stroke-linejoin="round" stroke-linecap="round"'
+    + ' vector-effect="non-scaling-stroke"'
+    + (dash ? ' stroke-dasharray="' + dash + '"' : '')
+    + (op ? ' stroke-opacity="' + op + '"' : '') + '/>';
+}
+
+function svgPolyline(r, color, width, op) { return svgLine(r.path, color, width, op); }
+
+/* 无人机架次：白底 + 彩色虚线。飞机不走路网，这里就是两点直连（见 SKILL.md 说明） */
+function svgSortie(sp, color, ghost) {
+  if (!sp.path || sp.path.length < 2) return '';
+  const w = ghost ? 2 : 2.6, dash = ghost ? '4 5' : '7 5';
+  return svgLine(sp.path, '#ffffff', w + 2.6, 0.55)
+    + svgLine(sp.path, ghost ? '#5b6270' : color, w, 1, dash);
+}
+
+/* 起飞 = 空心圆环，归队 = 实心方块；两个点通常不在一处（卡车一直在往前开） */
+function svgSortieEnds(sp, color) {
+  if (!sp.path || sp.path.length < 2) return '';
+  const a = xy(sp.path[0][0], sp.path[0][1]);
+  const b = xy(sp.path[sp.path.length - 1][0], sp.path[sp.path.length - 1][1]);
+  return '<circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="4.4"'
+    + ' fill="#ffffff" stroke="' + color + '" stroke-width="2"/>'
+    + '<rect x="' + (b[0] - 4.5).toFixed(1) + '" y="' + (b[1] - 4.5).toFixed(1)
+    + '" width="9" height="9" rx="1" fill="' + color + '" stroke="#1b1b1b" stroke-width="1.6"/>';
+}
+
+/* 禁飞区半径是米，按当前 zoom 换算成像素：156543.03392 * cos(lat) / 2^z */
+function mPerPx(lat) {
+  return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, B.zoom);
+}
+
+function svgNfz(z) {
+  const q = xy(z.lng, z.lat);
+  const r = z.r / mPerPx(z.lat);
+  return '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + r.toFixed(1) + '"'
+    + ' fill="#c0392b" fill-opacity=".10" stroke="#c0392b" stroke-width="1.2"'
+    + ' stroke-dasharray="5 4"><title>' + esc(z.label || '禁飞区') + '</title></circle>';
+}
+
+/* 现状残影：白底 + 深灰虚线。不垫白底的话，在彩色道路底图上几乎看不见 */
+function svgGhost(r) {
+  const p = svgPts(r);
+  return '<polyline points="' + p + '" fill="none" stroke="#ffffff" stroke-width="5.2"'
+    + ' stroke-opacity=".55" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
+    + '<polyline points="' + p + '" fill="none" stroke="#5b6270" stroke-width="2.4"'
+    + ' stroke-dasharray="9 6" stroke-opacity=".85" stroke-linejoin="round"'
+    + ' vector-effect="non-scaling-stroke"/>';
+}
+
+function renderSvg(sc) {
+  const ghost = (sc.key === P.scenarios[0].key) ? null : P.scenarios[0];
+  const solo = shownRoutes(sc).length <= 2;
+  let out = '';
+  let ends = '';
+
+  if (ghost) {
+    ghost.routes.forEach(function (r) {
+      out += svgGhost(r);
+      (r.sorties || []).forEach(function (s) { out += svgSortie(s, '#5b6270', true); });
+    });
+  }
+
+  sc.routes.forEach(function (r, i) {
+    if (hidden[i]) return;
+    out += svgPolyline(r, r.color, (r.kind === 'out' ? 3.4 : 4.2) + (solo ? 1.6 : 0));
+
+    // 卡车停靠点：架次就是在这里起降的，画出来才看得出"归队"落在哪
+    (r.stops || []).forEach(function (st) {
+      const q = xy(st.lng, st.lat);
+      out += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.6"'
+        + ' fill="' + r.color + '" stroke="#ffffff" stroke-width="1.2"><title>'
+        + esc(r.veh + ' · 第 ' + st.pos + ' 站') + '</title></circle>';
+    });
+
+    (r.sorties || []).forEach(function (s, j) {
+      if (hiddenS[i + ':' + j]) return;
+      out += svgSortie(s, r.color, false);
+      ends += svgSortieEnds(s, r.color);
+    });
+  });
+
+  P.stores.forEach(function (s) {
+    const q = xy(s.lng, s.lat);
+    out += '<g><circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1)
+      + '" r="' + (s.r || (s.cold ? 4.6 : 3)) + '" fill="' + (s.color || (s.cold ? '#00838f' : '#7b828b'))
+      + '" stroke="#ffffff" stroke-width="1.4"/>'
+      + '<title>' + esc(s.name) + '</title></g>';
+  });
+
+  (P.nfz || []).forEach(function (z) { out += svgNfz(z); });
+
+  out += ends;   // 起降标记压在站点之上
+
+  const d = xy(P.depot.lng, P.depot.lat);
+  out += '<g><rect x="' + (d[0] - 8).toFixed(1) + '" y="' + (d[1] - 8).toFixed(1)
+    + '" width="16" height="16" rx="3.5" fill="#111111" stroke="#ffffff" stroke-width="2.2"/>'
+    + '<path d="M' + (d[0] - 4.5).toFixed(1) + ' ' + (d[1] + 2.5).toFixed(1)
+    + ' L' + d[0].toFixed(1) + ' ' + (d[1] - 3).toFixed(1)
+    + ' L' + (d[0] + 4.5).toFixed(1) + ' ' + (d[1] + 2.5).toFixed(1)
+    + '" stroke="#ffffff" stroke-width="1.8" fill="none" stroke-linejoin="round"/>'
+    + '<title>配送中心：' + esc(P.depot.name) + '</title></g>';
+
+  const ov = document.getElementById('ov');
+  ov.setAttribute('viewBox', '0 0 ' + B.w + ' ' + B.h);
+  ov.innerHTML = out;
+}
+
+/* ---------------- 在线层：高德 JS API（可拖拽缩放） ---------------- */
+function hasJsKey() {
+  return !!AMAP_JSKEY && AMAP_JSKEY.length >= 16 && AMAP_JSKEY.indexOf('__') !== 0;
+}
+
+function loadAmap() {
+  if (!hasJsKey()) return;
+  window._AMapSecurityConfig = { securityJsCode: AMAP_JSCODE };
+  const s = document.createElement('script');
+  s.src = 'https://webapi.amap.com/maps?v=2.0&key=' + encodeURIComponent(AMAP_JSKEY);
+  s.async = true;
+  s.onload = function () { try { initAmap(); } catch (e) { /* 静态层已在，静默兜底 */ } };
+  document.head.appendChild(s);
+  // SDK 偶尔 onload 不触发（网络挂起）：到点再试一次
+  setTimeout(function () {
+    if (!amapReady && typeof AMap !== 'undefined') {
+      try { initAmap(); } catch (e) {}
+    }
+  }, 4000);
+}
+
+function initAmap() {
+  if (amapReady) return;
+  const el = document.getElementById('map');
+  el.style.display = 'block';
+  amap = new AMap.Map('map', {
+    zoom: B.zoom,
+    center: [B.center[0], B.center[1]],
+    viewMode: '2D',
+    resizeEnable: true,
+    mapStyle: 'amap://styles/normal'
+  });
+  try {
+    amap.addControl(new AMap.Scale());
+    amap.addControl(new AMap.ToolBar({ position: { right: '16px', bottom: '72px' } }));
+  } catch (e) {}
+
+  amapReady = true;
+  document.getElementById('stage').style.display = 'none';
+  const sc = P.scenarios.find(function (s) { return s.key === curKey; }) || P.scenarios[0];
+  renderAmap(sc);
+}
+
+function buildAmapBase() {
+  baseOvs = [];
+
+  P.stores.forEach(function (s) {
+    baseOvs.push(new AMap.CircleMarker({
+      center: [s.lng, s.lat],
+      radius: s.r || (s.cold ? 5 : 3.2),
+      strokeColor: '#ffffff', strokeWeight: 1.4,
+      fillColor: s.color || (s.cold ? '#00838f' : '#7b828b'), fillOpacity: 1,
+      zIndex: 60, bubble: true, cursor: 'pointer'
+    }).setMap(amap));
+  });
+
+  baseOvs.push(new AMap.Marker({
+    position: [P.depot.lng, P.depot.lat],
+    content: '<div style="width:18px;height:18px;background:#111;border:2px solid #fff;'
+      + 'border-radius:4px;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>',
+    offset: new AMap.Pixel(-9, -9),
+    title: P.depot.name,
+    zIndex: 80
+  }).setMap(amap));
+}
+
+function renderAmap(sc) {
+  // AMap 2.0 里 setMap(null) 和 remove([数组]) 都不可靠（不报错，但线留在图上），
+  // 每次重绘老老实实 clearMap() 全清再重建 —— 61 个点 + 6 条线，几十毫秒，值。
+  try { amap.clearMap(); } catch (e) {}
+  routeOvs = [];
+  buildAmapBase();
+
+  const ghost = (sc.key === P.scenarios[0].key) ? null : P.scenarios[0];
+  const solo = shownRoutes(sc).length <= 2;
+
+  if (ghost) {
+    ghost.routes.forEach(function (r) {
+      routeOvs.push(new AMap.Polyline({
+        path: r.path, strokeColor: '#5b6270', strokeWeight: 2.4, strokeOpacity: 0.85,
+        strokeStyle: 'dashed', strokeDasharray: [9, 6], lineJoin: 'round', zIndex: 30
+      }).setMap(amap));
+      (r.sorties || []).forEach(function (s) {
+        if (!s.path || s.path.length < 2) return;
+        routeOvs.push(new AMap.Polyline({
+          path: s.path, strokeColor: '#5b6270', strokeWeight: 2, strokeOpacity: 0.8,
+          strokeStyle: 'dashed', strokeDasharray: [4, 5], zIndex: 32
+        }).setMap(amap));
+      });
+    });
+  }
+
+  sc.routes.forEach(function (r, i) {
+    if (hidden[i]) return;
+    routeOvs.push(new AMap.Polyline({
+      path: r.path,
+      strokeColor: r.color,
+      strokeWeight: (r.kind === 'out' ? 4 : 5) + (solo ? 2 : 0),
+      strokeOpacity: 1, lineJoin: 'round', lineCap: 'round',
+      isOutline: true, outlineColor: '#ffffff', borderWeight: 2,
+      zIndex: 40
+    }).setMap(amap));
+
+    // 卡车停靠点：架次起降的落点
+    (r.stops || []).forEach(function (st) {
+      routeOvs.push(new AMap.CircleMarker({
+        center: [st.lng, st.lat], radius: 3,
+        strokeColor: '#ffffff', strokeWeight: 1.2,
+        fillColor: r.color, fillOpacity: 0.95, zIndex: 62, bubble: true
+      }).setMap(amap));
+    });
+
+    (r.sorties || []).forEach(function (s, j) {
+      if (hiddenS[i + ':' + j] || !s.path || s.path.length < 2) return;
+      routeOvs.push(new AMap.Polyline({
+        path: s.path, strokeColor: '#ffffff', strokeWeight: 6, strokeOpacity: 0.55,
+        lineJoin: 'round', zIndex: 48
+      }).setMap(amap));
+      routeOvs.push(new AMap.Polyline({
+        path: s.path, strokeColor: r.color, strokeWeight: 2.6, strokeOpacity: 1,
+        strokeStyle: 'dashed', strokeDasharray: [7, 5], lineJoin: 'round', zIndex: 50
+      }).setMap(amap));
+
+      // 起飞：空心圆环
+      routeOvs.push(new AMap.CircleMarker({
+        center: s.path[0], radius: 4.6,
+        strokeColor: r.color, strokeWeight: 2, fillColor: '#ffffff', fillOpacity: 1,
+        zIndex: 66, bubble: true
+      }).setMap(amap));
+      // 归队：实心方块，和起飞点明显区分
+      routeOvs.push(new AMap.Marker({
+        position: s.path[s.path.length - 1],
+        content: '<div style="width:10px;height:10px;background:' + r.color
+          + ';border:2px solid #1b1b1b;border-radius:2px;box-sizing:border-box"></div>',
+        offset: new AMap.Pixel(-5, -5), zIndex: 68
+      }).setMap(amap));
+    });
+  });
+
+  (P.nfz || []).forEach(function (z) {
+    routeOvs.push(new AMap.Circle({
+      center: [z.lng, z.lat], radius: z.r,
+      strokeColor: '#c0392b', strokeWeight: 1.2, strokeOpacity: 0.9,
+      fillColor: '#c0392b', fillOpacity: 0.12, zIndex: 20
+    }).setMap(amap));
+  });
+}
+
+/* 分派：在线优先，任何异常退回静态层 */
+function renderMap(sc) {
+  if (amapReady) {
+    try { renderAmap(sc); return; } catch (e) {
+      amapReady = false;
+      document.getElementById('map').style.display = 'none';
+      document.getElementById('stage').style.display = 'flex';
+      showErr('在线地图渲染失败，已切回静态底图：' + e.message);
+    }
+  }
+  renderSvg(sc);
+}
+
+/* ---------------- 面板 ---------------- */
+function relPct(cur, base, better) {
+  if (typeof cur !== 'number' || typeof base !== 'number' || !base) return '';
+  const d = (cur - base) / Math.abs(base) * 100;
+  if (Math.abs(d) < 0.05) return ' <span class="delta">—</span>';
+  const good = (better === 'up') ? d > 0 : d < 0;
+  return ' <span class="delta ' + (good ? 'down' : 'up') + '">'
+    + (d > 0 ? '+' : '') + d.toFixed(1) + '%</span>';
+}
+
+function renderPanel(sc) {
+  const base = P.scenarios[0];
+  const isBase = sc.key === base.key;
+  const nOwn = sc.routes.filter(function (r) { return r.kind === 'own'; }).length;
+  const nOut = sc.routes.length - nOwn;
+  const nS = sc.routes.reduce(function (a, r) { return a + (r.sorties || []).length; }, 0);
+
+  const ban = document.getElementById('banner');
+  if (sc.headline) {
+    ban.className = isBase ? 'banner' : 'banner opt';
+    ban.innerHTML = '<span class="big">' + esc(sc.headline) + '</span>'
+      + '<span class="tail">' + (sc.headline_tail || '') + '</span>';
+  } else if (isBase) {
+    ban.className = 'banner';
+    ban.innerHTML = '<span class="big">' + fmt1(sc.total_km) + ' km</span>'
+      + '<span class="tail">现状基线<br>' + sc.routes.length + ' 车次'
+      + (nS ? ' · ' + nS + ' 架次' : '') + '</span>';
+  } else {
+    ban.className = 'banner opt';
+    ban.innerHTML = '<span class="big">' + fmt1(base.total_km) + ' → ' + fmt1(sc.total_km) + ' km</span>'
+      + '<span class="tail">少 ' + (base.routes.length - sc.routes.length) + ' 车次 · '
+      + '省 ' + fmt1(base.total_km - sc.total_km) + ' km</span>';
+  }
+
+  // 有 metrics 就用它（无人机-卡车这类指标多、单位杂的场景），否则用配送 VRP 的默认几行
+  let statsHtml;
+  if (sc.metrics && sc.metrics.length) {
+    const bm = {};
+    (base.metrics || []).forEach(function (m) { bm[m.label] = m; });
+    statsHtml = sc.metrics.map(function (m) {
+      const b = bm[m.label];
+      const num = (typeof m.value === 'number')
+        ? (Math.abs(m.value) >= 100 ? Math.round(m.value) : m.value) : m.value;
+      return '<tr><td>' + esc(m.label) + '</td><td>' + num
+        + (m.unit ? ' ' + esc(m.unit) : '')
+        + (isBase || !b ? '' : relPct(m.value, b.value, m.better))
+        + '</td></tr>';
+    }).join('');
+  } else {
+    const dKm = (sc.total_km - base.total_km) / base.total_km * 100;
+    const dCost = (sc.total_cost - base.total_cost) / base.total_cost * 100;
+    const cls = function (v) { return v <= 0 ? 'down' : 'up'; };
+    const sign = function (v) { return (v > 0 ? '+' : '') + v.toFixed(1) + '%'; };
+    statsHtml =
+      '<tr><td>线路 / 门店</td><td>' + sc.routes.length + ' / ' + sc.covered + '</td></tr>'
+      + '<tr><td>自有车 / 外协车</td><td>' + nOwn + ' / ' + nOut + '</td></tr>'
+      + '<tr><td>总里程</td><td>' + fmt1(sc.total_km) + ' km</td></tr>'
+      + '<tr><td>相对现状（里程）</td><td class="delta ' + cls(dKm) + '">' + sign(dKm) + '</td></tr>'
+      + '<tr><td>总费用</td><td>' + fmt1(sc.total_cost) + ' 元</td></tr>'
+      + '<tr><td>相对现状（费用）</td><td class="delta ' + cls(dCost) + '">' + sign(dCost) + '</td></tr>'
+      + '<tr><td>最长线路</td><td>' + Math.round(sc.max_min) + ' min</td></tr>';
+  }
+  document.getElementById('stats').innerHTML = statsHtml;
+
+  const leg = [];
+  if (hasDrone(sc)) {
+    leg.push('<span class="dashline"></span>无人机架次（虚线，同色属同一辆卡车）');
+    leg.push('<span class="ring"></span>起飞点<span class="sq"></span>归队点（落回卡车后方某一站）');
+    leg.push('<span class="dot" style="background:#c0392b"></span>客户点');
+  } else {
+    leg.push('<span class="dot" style="background:#7b828b"></span>普通门店 '
+      + '<span class="dot" style="background:#00838f;margin-left:8px"></span>冷藏门店 '
+      + '<span class="dot" style="background:#111;margin-left:8px;border-radius:2px"></span>配送中心');
+  }
+  if ((P.nfz || []).length) leg.push('<span class="nfzdot"></span>禁飞区');
+  if (!isBase) leg.push('<span class="dashline"></span>灰色虚线 = 基线残影（不随勾选隐藏）');
+  document.getElementById('legend').innerHTML = leg.join('<br>');
+
+  document.getElementById('tabs').querySelectorAll('button').forEach(function (b) {
+    const on = b.dataset.key === sc.key;
+    b.className = on ? 'on' : '';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+/* ---------------- 线路勾选列表 ---------------- */
+function renderRoutes(sc) {
+  const tools = document.getElementById('rtools');
+  tools.innerHTML = '<span class="rcount"></span>'
+    + '<button type="button" class="mini" data-act="all">全选</button>'
+    + '<button type="button" class="mini" data-act="none">清空</button>'
+    + '<button type="button" class="mini" data-act="invert">反选</button>';
+
+  tools.querySelectorAll('.mini').forEach(function (b) {
+    b.addEventListener('click', function () { setAll(sc, b.dataset.act); });
+  });
+
+  document.getElementById('routes').innerHTML = sc.routes.map(function (r, i) {
+    const on = !hidden[i];
+    const sorties = r.sorties || [];
+    const meta = [r.n + (sorties.length ? ' 站' : ' 店')];
+    if (r.is_cold) meta.push('冷链');
+    if (r.kind === 'out') meta.push('外协');
+    if (sorties.length) meta.push(sorties.length + ' 架次');
+    const stat = [];
+    if (typeof r.km === 'number') stat.push(fmt1(r.km) + ' km');
+    if (r.cap) stat.push(Math.round(r.load / r.cap * 100) + '%');
+    const head = '<label class="rrow' + (on ? '' : ' off') + '" data-idx="' + i + '">'
+      + '<input type="checkbox" data-idx="' + i + '"' + (on ? ' checked' : '') + '>'
+      + '<span class="chip" style="background:' + r.color + '"></span>'
+      + '<span class="rname">' + esc(r.veh) + '</span>'
+      + '<span class="rmeta">' + esc(meta.join(' · ')) + '</span>'
+      + '<span class="rstat">' + esc(stat.join(' · ')) + '</span></label>';
+    const kids = sorties.map(function (s, j) {
+      const key = i + ':' + j, son = !hiddenS[key];
+      const t = (s.t_launch_min !== undefined)
+        ? ' · ' + s.t_launch_min + '→' + s.t_land_min + ' min' : '';
+      return '<label class="srow' + (son ? '' : ' off') + '" data-sidx="' + key + '">'
+        + '<input type="checkbox" data-sidx="' + key + '"' + (son ? ' checked' : '') + '>'
+        + '<span class="sdash" style="border-color:' + r.color + '"></span>'
+        + '<span class="smeta">架次 ' + (j + 1) + ' · ' + nCust(s) + ' 客户' + t + '</span></label>';
+    }).join('');
+    return head + kids;
+  }).join('');
+
+  // 卡车勾选：连带它所有架次一起显隐
+  document.getElementById('routes').querySelectorAll('input[data-idx]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      const i = Number(cb.dataset.idx), show = cb.checked;
+      if (show) delete hidden[i]; else hidden[i] = true;
+      (sc.routes[i].sorties || []).forEach(function (s, j) {
+        if (show) delete hiddenS[i + ':' + j]; else hiddenS[i + ':' + j] = true;
+      });
+      renderRoutes(sc);          // 子行状态跟着变，重建最省事
+      renderMap(sc);
+    });
+  });
+
+  // 架次勾选：只影响这一条虚线
+  document.getElementById('routes').querySelectorAll('input[data-sidx]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      const key = cb.dataset.sidx;
+      if (cb.checked) delete hiddenS[key]; else hiddenS[key] = true;
+      const row = document.querySelector('#routes .srow[data-sidx="' + key + '"]');
+      if (row) row.className = 'srow' + (cb.checked ? '' : ' off');
+      refreshCounts(sc);
+      renderMap(sc);
+    });
+  });
+
+  refreshCounts(sc);
+}
+
+function refreshCounts(sc) {
+  const vis = shownRoutes(sc);
+  let km = vis.reduce(function (a, r) { return a + (r.km || 0); }, 0);
+  if (vis.length === sc.routes.length && typeof sc.total_km === 'number') km = sc.total_km;
+  const totalS = sc.routes.reduce(function (a, r) { return a + (r.sorties || []).length; }, 0);
+  const visS = sc.routes.reduce(function (a, r, i) {
+    if (hidden[i]) return a;
+    return a + (r.sorties || []).filter(function (s, j) { return !hiddenS[i + ':' + j]; }).length;
+  }, 0);
+
+  const el = document.querySelector('#rtools .rcount');
+  if (!el) return;
+  if (!vis.length) {
+    el.textContent = (sc.key === P.scenarios[0].key)
+      ? '已选 0 条 · 地图已清空'
+      : '已选 0 条 · 仅剩基线残影';
+    el.style.color = '#c0392b';
+    return;
+  }
+  let txt = '已选 ' + vis.length + ' / ' + sc.routes.length + ' 条';
+  if (totalS) txt += ' · ' + visS + ' / ' + totalS + ' 架次';
+  if (typeof sc.total_km === 'number' || km) txt += ' · ' + fmt1(km) + ' km';
+  el.textContent = txt;
+  el.style.color = '#555';
+}
+
+function setAll(sc, act) {
+  sc.routes.forEach(function (r, i) {
+    let show;
+    if (act === 'all') show = true;
+    else if (act === 'none') show = false;
+    else show = !!hidden[i];
+    if (show) delete hidden[i]; else hidden[i] = true;
+
+    (r.sorties || []).forEach(function (s, j) {
+      const key = i + ':' + j;
+      let ss;
+      if (act === 'all') ss = true;
+      else if (act === 'none') ss = false;
+      else ss = !!hiddenS[key];        // 反选：架次各自翻转，不跟着卡车走
+      if (ss) delete hiddenS[key]; else hiddenS[key] = true;
+    });
+  });
+  renderRoutes(sc);     // 重建列表，勾选态一次同步
+  renderMap(sc);
+}
+
+/* ---------------- 主流程 ---------------- */
+function draw(key) {
+  const sc = P.scenarios.find(function (s) { return s.key === key; });
+  if (!sc) { showErr('找不到场景：' + key); return; }
+
+  if (curKey !== key) { hidden = {}; hiddenS = {}; }   // 换场景时复位为全选
+  curKey = key;
+  clearErr();
+
+  renderPanel(sc);
+  renderRoutes(sc);
+  renderMap(sc);
+}
+
+function init() {
+  document.getElementById('title').textContent = P.meta.title;
+  document.getElementById('subtitle').textContent = P.meta.subtitle;
+
+  const w = document.getElementById('warn');
+  w.style.display = 'block';
+  w.innerHTML = '<b>门店位置与距离为真实数据，其余为假设</b><br>' + P.meta.disclaimer;
+
+  const anyDrone = P.scenarios.some(hasDrone);
+  document.getElementById('note').innerHTML =
+    '坐标系 ' + P.meta.crs + ' · 底图 高德地图 z' + B.zoom + ' · '
+    + (anyDrone ? '卡车轨迹来自高德驾车规划；无人机航段为两点直连（不走路网）' : '路线几何来自高德驾车规划')
+    + '<br>仓库：' + P.meta.depot_name;
+  document.getElementById('cr').textContent = '© ' + (B.attribution || '高德地图');
+
+  const img = document.getElementById('base');
+  img.addEventListener('load', fitCanvas);
+  img.src = B.src;
+
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = P.scenarios.map(function (s) {
+    return '<button type="button" data-key="' + s.key + '">' + s.label + '</button>';
+  }).join('');
+  tabs.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      draw(b.dataset.key);
+    });
+  });
+
+  fitCanvas();
+  // 默认打开哪个方案：无人机-卡车这种"初始 vs 最终"的图应落在最终解，
+  // 配送 VRP 的基线图则落在第一个（现状）。由 payload.meta.default 决定。
+  const start = (P.meta && P.meta["default"]) || P.scenarios[0].key;
+  draw(P.scenarios.some(function (s) { return s.key === start; }) ? start : P.scenarios[0].key);
+  loadAmap();                 // SDK 到了再升级为可拖拽地图
+}
+
+window.addEventListener('resize', function () {
+  if (!curKey || amapReady) return;          // 在线地图自己处理尺寸
+  const sc = P.scenarios.find(function (s) { return s.key === curKey; });
+  if (sc) { fitCanvas(); try { renderSvg(sc); } catch (e) {} }
+});
+
+window.addEventListener('error', function (e) {
+  if (e && e.message) showErr('页面脚本异常：' + e.message);
+});
+
+init();
+</script>
+</body>
+</html>

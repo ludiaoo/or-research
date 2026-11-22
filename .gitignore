@@ -1,0 +1,27 @@
+# 凭据
+.env
+.env.*
+!.env.example
+.amap_key
+.amap_js_key
+.amap_jscode
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# 生成的研究目录与实验产物
+demo/
+lab/
+results/
+figures/
+*.log
+
+# 地图底图缓存与生成的页面
+basemap/
+examples/*.html
+examples/*.png
