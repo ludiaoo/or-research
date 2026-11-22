@@ -1,5 +1,9 @@
 # or-research
 
+[![tests](https://github.com/ludiaoo/or-research/actions/workflows/ci.yml/badge.svg)](https://github.com/ludiaoo/or-research/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+
 一个面向运筹优化的 AI Skill：把一句模糊的业务设想，变成**能执行、能解释、能复算**的优化方案；需要时再升级成论文。
 
 它既是 Agent 可读的工作规程（`SKILL.md`），也是一组可独立运行的命令行工具——建模、求解、统计验证与地图可视化都在同一个仓库里，不预设问题领域或求解器。
